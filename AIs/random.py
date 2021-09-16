@@ -45,16 +45,17 @@ def random_move () :
 
 def preprocessing (maze_map, maze_width, maze_height, player_location, opponent_location, pieces_of_cheese, time_allowed) :
     maze = np.zeros(len(maze_map) * 4)
-    print(maze)
     count = 0
-    for i in range(0, 4):
-        print((i % 2 - 1, (i % 2 - 2) % 2))
     for location in maze_map:
         x = location[0]
         y = location[1]
-
-            #maze[count * 4 + i] = maze.maze_map[location][(x % 2 - 1,(y % 2 - 2) % 2)]
-
+        for i in range(0, 4):
+            pos = (x + (i - 1 if i % 2 == 0 else 0), y + (i - 2 if i % 2 == 1 else 0))
+            print(pos)
+            if pos in maze_map[location]:
+                maze[count * 4 + i] = maze_map[location][pos]
+            else:
+                maze[count * 4 + i] = 0
         count+=1
     # Nothing to do here
     pass
