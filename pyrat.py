@@ -621,6 +621,16 @@ def main():
     print("}")
     pygame.quit()
 
+def main_bis(parent_process, external_args):
+    global parent
+
+    parent = parent_process
+    print(args)
+    for arg in external_args:
+        args[arg[0]] = arg[1]
+    main()
+
+
 if __name__ == "__main__":
     #mp.set_start_method("spawn") # Add that if there is a weird bug with OSX...
     main()

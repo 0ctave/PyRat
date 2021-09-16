@@ -55,6 +55,7 @@ parser.add_argument('--import_keras', action="store_true", help='Import keras wh
 args = parser.parse_args()
 args.window_height = int(10 * args.window_width / 16)
 
+parent = None
 # Check for conflicts
 if args.synchronous and not(args.desactivate_animations):
     print("Note: in synchronous mode, animations are automatically desactivated", file=sys.stderr)
