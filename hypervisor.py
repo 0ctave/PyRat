@@ -6,67 +6,22 @@ from keras.layers.core import Dense, Activation
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
 from keras.layers.advanced_activations import PReLU
 import random
-from fs.memoryfs import MemoryFS
 import multiprocessing
 import pyrat
 
 epsilon = 0.1
 
-model = None
+MOVE_DOWN = 0
+MOVE_LEFT = 1
+MOVE_RIGHT = 2
+MOVE_UP = 3
 
-def pyrat_instance(child_link):
-    pyrat.main_bis(child_link)
-
-if __name__ == '__main__':
-    os.system("pyrat.py --rat AIs/RNN.py -x 4 -y 4 -p 2 --start_random")
-
-    parent_link, child_link = multiprocessing.Pipe()
-
-    p = multiprocessing.Process(target=pyrat_instance, args=(child_link,))
-    p.start()
-
-    queue.put(MyFancyClass('Fancy Dan'))
-
-    # Wait for the worker to finish
-    queue.close()
-    queue.join_thread()
-    p.join()
-
-
-def training_processing(maze, **opt):
-    global model
-    model = build_model(maze)
-
-    global epsilon
-    n_epoch = opt.get('n_epoch', 15000)
-    max_memory = opt.get('max_memory', 1000)
-    data_size = opt.get('data_size', 50)
-    weights_file = opt.get('weights_file', "")
-    name = opt.get('name', 'model')
-    start_time = datetime.datetime.now()
-
-
-def build_model(maze, lr=0.001):
-    model = Sequential()
-    model.add(Dense(maze.size, input_shape=(maze.size,)))
-    model.add(PReLU())
-    model.add(Dense(maze.size))
-    model.add(PReLU())
-    model.add(Dense(4))
-    model.compile(optimizer='adam', loss='mse')
-    return model
-
-
-def format_time(seconds):
-    if seconds < 400:
-        s = float(seconds)
-        return "%.1f seconds" % (s,)
-    elif seconds < 4000:
-        m = seconds / 60.0
-        return "%.2f minutes" % (m,)
-    else:
-        h = seconds / 3600.0
-        return "%.2f hours" % (h,)
+actions_dict = {
+    MOVE_DOWN: 'D',
+    MOVE_LEFT: 'L',
+    MOVE_RIGHT: 'R',
+    MOVE_UP: 'U',
+}
 
 
 class Episode(object):
@@ -99,11 +54,209 @@ class Episode(object):
             inputs[i] = envstate
             # There should be no target values for actions not taken.
             targets[i] = self.predict(envstate)
-            # Q_sa = derived policy = max quality env/action = max_a' Q(s', a')
-            Q_sa = np.max(self.predict(envstate_next))
+            # q_sa = derived policy = max quality env/action = max_a' Q(s', a')
+            q_sa = np.max(self.predict(envstate_next))
             if game_over:
                 targets[i, action] = reward
             else:
                 # reward + gamma * max_a' Q(s', a')
-                targets[i, action] = reward + self.discount * Q_sa
+                targets[i, action] = reward + self.discount * q_sa
         return inputs, targets
+
+
+def build_model():
+    model = Sequential()
+    model.add(Dense(64, input_shape=(64,)))
+    model.add(PReLU())
+    model.add(Dense(64))
+    model.add(PReLU())
+    model.add(Dense(4))
+    model.compile(optimizer='adam', loss='mse')
+    return model
+
+
+def pyrat_instance(child_link):
+    args = ["--rat", "AIs/RNN.py", "-x", "4", "-y", "4", "-p", "2", "--start_random", "-mt", "50", "--rnn",
+            "--synchronous",
+            #"--auto_exit",
+            #"--nodrawing",
+            ]
+
+    pyrat.main_bis(child_link, args)
+
+
+def maze_processing(maze_map):
+    maze_state = np.zeros(len(maze_map) * 4)
+    count = 0
+    for location in maze_map:
+        x = location[0]
+        y = location[1]
+        for i in range(0, 4):
+            pos = (x + (i - 1 if i % 2 == 0 else 0), y + (i - 2 if i % 2 == 1 else 0))
+            if pos in maze_map[location]:
+                maze_state[count * 4 + i] = maze_map[location][pos]
+            else:
+                maze_state[count * 4 + i] = 100
+
+        count += 1
+    return maze_state
+
+
+def state_observer(maze_state, width, player_location, pieces_of_cheese):
+    tmp = np.copy(maze_state)
+    for i in range(0, 4):
+        tmp[width * player_location[0] + player_location[1] + i] -= 50
+
+    cheese_map = np.zeros(len(maze_state))
+    for location in pieces_of_cheese:
+        x = location[0]
+        y = location[1]
+        for i in range(0, 4):
+            cheese_map[(width * x + y) * 4 + i] = 1
+
+    return np.add(tmp, -100 * cheese_map).reshape((1, -1))
+
+
+def register_episode(experience, prev_maze_state, action, reward, maze_state, game_over):
+    episode = [prev_maze_state, action, reward, maze_state, game_over]
+    experience.remember(episode)
+
+
+def maze_episodes(maze_state, width, model, experience, win_history, data_size, child):
+    loss = 0.0
+
+    # get initial envstate (1d flattened canvas)
+
+    n_episodes = 0
+    action = MOVE_DOWN
+    state = state_observer(maze_state, width, [0, 0], [])
+
+    while 1:
+
+        reward = child.recv()
+        #print(reward)
+        prev_state = state
+        game_state = child.recv()
+
+        if game_state == ["win"]:
+            win_history.append(1)
+            register_episode(experience, prev_state, action, reward, state, True)
+            break
+        elif game_state == ["lose"]:
+            win_history.append(0)
+            register_episode(experience, prev_state, action, reward, state, True)
+            break
+
+
+        cheese_map = child.recv()
+        player_position = child.recv()
+        state = state_observer(maze_state, width, player_position, cheese_map)
+        # Get next action
+
+        if np.random.rand() < epsilon:
+            action = random.choice([MOVE_DOWN, MOVE_LEFT, MOVE_RIGHT, MOVE_UP])
+        else:
+            action = np.argmax(experience.predict(prev_state))
+
+
+
+        # Apply action, get reward and new envstate
+        child.send(actions_dict[action])
+
+        register_episode(experience, prev_state, action, reward, state, False)
+        n_episodes += 1
+
+        # Train neural network model
+        inputs, targets = experience.get_data(data_size=data_size)
+        h = model.fit(
+            inputs,
+            targets,
+            epochs=8,
+            batch_size=16,
+            verbose=0,
+        )
+        loss = model.evaluate(inputs, targets, verbose=0)
+
+    return n_episodes, loss
+
+
+def training_processing(**opt):
+    global epsilon
+    n_epoch = opt.get('n_epoch', 15000)
+    max_memory = opt.get('max_memory', 1000)
+    data_size = opt.get('data_size', 50)
+    weights_file = opt.get('weights_file', "")
+    name = opt.get('name', 'model')
+    start_time = datetime.datetime.now()
+
+    model = build_model()
+
+    if weights_file:
+        print("loading weights from file: %s" % (weights_file,))
+        model.load_weights(weights_file)
+
+    experience = Episode(model, max_memory=max_memory)
+
+    win_history = []  # history of win/lose game
+    hsize = 1024 // 2  # history window size
+    win_rate = 0.0
+    imctr = 1
+
+    for epoch in range(n_epoch):
+        loss = 0.0
+
+        parent_link, child_link = multiprocessing.Pipe()
+
+        p = multiprocessing.Process(target=pyrat_instance, args=(child_link,))
+        p.start()
+        parent_link.send([42, None, 'hello'])
+        width = parent_link.recv()
+        maze_map = parent_link.recv()
+        maze_state = maze_processing(maze_map)
+        print(width)
+        print(maze_map)
+        n_episodes, loss = maze_episodes(maze_state, width, model, experience, win_history, data_size, parent_link)
+
+        if len(win_history) > hsize:
+            win_rate = sum(win_history[-hsize:]) / hsize
+
+        dt = datetime.datetime.now() - start_time
+        t = format_time(dt.total_seconds())
+        template = "Epoch: {:03d}/{:d} | Loss: {:.4f} | Episodes: {:d} | Win count: {:d} | Win rate: {:.3f} | time: {}"
+        print(template.format(epoch, n_epoch - 1, loss, n_episodes, sum(win_history), win_rate, t))
+        # we simply check if training has exhausted all free cells and if in all
+        # cases the agent won
+        if win_rate > 0.9: epsilon = 0.05
+        if sum(win_history[-hsize:]) == hsize:  # and completion_check(model, qmaze):
+            print("Reached 100%% win rate at epoch: %d" % (epoch,))
+            break
+
+    # Save trained model weights and architecture, this will be used by the visualization code
+    h5file = name + ".h5"
+    json_file = name + ".json"
+    model.save_weights(h5file, overwrite=True)
+    with open(json_file, "w") as outfile:
+        json.dump(model.to_json(), outfile)
+    end_time = datetime.datetime.now()
+    dt = datetime.datetime.now() - start_time
+    seconds = dt.total_seconds()
+    t = format_time(seconds)
+    print('files: %s, %s' % (h5file, json_file))
+    print("n_epoch: %d, max_mem: %d, data: %d, time: %s" % (epoch, max_memory, data_size, t))
+    return seconds
+
+
+def format_time(seconds):
+    if seconds < 400:
+        s = float(seconds)
+        return "%.1f seconds" % (s,)
+    elif seconds < 4000:
+        m = seconds / 60.0
+        return "%.2f minutes" % (m,)
+    else:
+        h = seconds / 3600.0
+        return "%.2f hours" % (h,)
+
+
+if __name__ == '__main__':
+    training_processing(epochs=1, max_memory=8 * 64, data_size=64)

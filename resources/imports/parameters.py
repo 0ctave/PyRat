@@ -52,6 +52,7 @@ parser.add_argument('--random_seed', type=int, metavar = "random_seed", help='ra
 parser.add_argument('--random_cheese', action="store_true", help='Force cheese location to be random (even if used in combination with --random_seed)')
 parser.add_argument('--postprocessing', action="store_true", help='Perform postprocessing (useful for tournaments)')
 parser.add_argument('--import_keras', action="store_true", help='Import keras when loading pyrat to avoid multiple loads')
+parser.add_argument('--rnn', action="store_true", help='Is RNN running')
 args = parser.parse_args()
 args.window_height = int(10 * args.window_width / 16)
 
