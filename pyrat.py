@@ -427,6 +427,8 @@ def run_game(screen, infoObject):
 
 
     while 1:
+        parent.send(true_score1 - miss1 + moves1)
+
         # Check if too many turns have occured, this is mainly to avoid unending games
         if turns == args.max_turns:
             send_info("max number of turns reached!", q_info)

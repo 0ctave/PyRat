@@ -76,7 +76,7 @@ def build_model():
 
 
 def pyrat_instance(child_link):
-    args = ["--rat", "AIs/RNN.py", "-x", "3", "-y", "3", "-p", "1", "--start_random", "-mt", "10", "--rnn",
+    args = ["--rat", "AIs/RNN.py", "-x", "4", "-y", "4", "-p", "2", "--start_random", "-mt", "50", "--rnn",
             "--synchronous",
             "--auto_exit",
             "--preparation_time", "0",
