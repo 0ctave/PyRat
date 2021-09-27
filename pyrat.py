@@ -29,12 +29,17 @@ from threading import Thread
 import multiprocessing as mp
 import os
 import signal
+
+from os import environ
+environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+
 import pygame
 import traceback
 import datetime
 import gdown
 import ipynb_py_convert
 import json
+
 
 if args.import_keras:
     import keras
@@ -150,9 +155,6 @@ def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, 
             # We now ask the AI what to do
             if pieces_of_cheese == []:
                 break
-
-            if rnn:
-                parent.send(["running"])
 
             try:
                 before = time.time()
@@ -338,6 +340,9 @@ def run_game(screen, infoObject):
 
     #RNN
     true_score1 = 0
+    true_move1 = 0
+    true_miss1 = 0
+    true_stucks1 = 0
 
     stuck1 = 0
     stuck2 = 0
@@ -422,8 +427,6 @@ def run_game(screen, infoObject):
 
 
     while 1:
-        parent.send(true_score1 - miss1 + moves1)
-
         # Check if too many turns have occured, this is mainly to avoid unending games
         if turns == args.max_turns:
             send_info("max number of turns reached!", q_info)
@@ -447,7 +450,7 @@ def run_game(screen, infoObject):
                 play_sound(effect_both)
             else:
                 score1 = score1 + 1
-                true_score1 += 50
+                true_score1 = 1
                 if player2_location in pieces_of_cheese and stuck2 <= 0 and args.python != "":
                     play_sound(effect_both)
                 else:
@@ -479,6 +482,7 @@ def run_game(screen, infoObject):
                 break
         else:
             if score1 >= args.pieces:
+                print("before win")
                 send_info("The Rat (" + p1name + ") got all pieces of cheese!", q_info)
                 win1 = win1 + 1
                 break
@@ -493,6 +497,8 @@ def run_game(screen, infoObject):
 
         # If players can move, ask them their next decision
         if stuck1 <= 0:
+            if args.rnn:
+                parent.send(["running"])
             send_turn(q1_in, player1_location, player2_location, true_score1, score2, pieces_of_cheese)
         if stuck2 <= 0:
             send_turn(q2_in, player2_location, player1_location, score2, score1, pieces_of_cheese)
@@ -548,6 +554,11 @@ def run_game(screen, infoObject):
         if not (args.nodrawing) and not (args.save_images):
             pygame.event.pump()
 
+        true_move1 = moves1
+        true_miss1 = miss1
+
+        oldStuck1 = stuck1
+
         # Finally update informations about the game
         player1_location, player2_location, stuck1, stuck2, moves1, moves2, miss1, miss2 = move(decision1, decision2,
                                                                                                 maze, player1_location,
@@ -555,7 +566,23 @@ def run_game(screen, infoObject):
                                                                                                 stuck1, stuck2, moves1,
                                                                                                 moves2, miss1, miss2)
 
+        true_move1 = moves1 - true_move1
+        true_miss1 = miss1 - true_miss1
+        if oldStuck1 <= 0:
+            if args.rnn:
+                parent.send(true_score1 - 0.75 *true_miss1 - 0.05 * true_move1)
+
+        true_score1 = 0
+        true_move1 = 0
+        true_miss1 = 0
+        true_stucks1 = 0
+
     if args.rnn:
+        #if stuck1 > 0:
+        #    parent.send(stuck1)
+        #true_move1 = moves1 - true_move1
+        #true_stucks1 = stuck1
+        #parent.send(true_score1 - true_miss1 - true_move1 - true_stucks1)
         if tempwin != win1:
             parent.send(["win"])
         else:
@@ -700,8 +727,6 @@ def main_bis(parent_process, external_args):
     parent = parent_process
     args = parser.parse_args(external_args)
     args.window_height = int(10 * args.window_width / 16)
-    print(args)
-    print(parent_process.recv())
     main()
 
 

@@ -66,9 +66,9 @@ class Episode(object):
 
 def build_model():
     model = Sequential()
-    model.add(Dense(64, input_shape=(64,)))
+    model.add(Dense(36, input_shape=(36,)))
     model.add(PReLU())
-    model.add(Dense(64))
+    model.add(Dense(36))
     model.add(PReLU())
     model.add(Dense(4))
     model.compile(optimizer='adam', loss='mse')
@@ -76,10 +76,11 @@ def build_model():
 
 
 def pyrat_instance(child_link):
-    args = ["--rat", "AIs/RNN.py", "-x", "4", "-y", "4", "-p", "2", "--start_random", "-mt", "50", "--rnn",
+    args = ["--rat", "AIs/RNN.py", "-x", "3", "-y", "3", "-p", "1", "--start_random", "-mt", "10", "--rnn",
             "--synchronous",
-            #"--auto_exit",
-            #"--nodrawing",
+            "--auto_exit",
+            "--preparation_time", "0",
+            "--nodrawing",
             ]
 
     pyrat.main_bis(child_link, args)
@@ -131,22 +132,11 @@ def maze_episodes(maze_state, width, model, experience, win_history, data_size, 
     action = MOVE_DOWN
     state = state_observer(maze_state, width, [0, 0], [])
 
-    while 1:
+    game_over = False
+    print(child.recv())
+    while not game_over:
 
-        reward = child.recv()
-        #print(reward)
         prev_state = state
-        game_state = child.recv()
-
-        if game_state == ["win"]:
-            win_history.append(1)
-            register_episode(experience, prev_state, action, reward, state, True)
-            break
-        elif game_state == ["lose"]:
-            win_history.append(0)
-            register_episode(experience, prev_state, action, reward, state, True)
-            break
-
 
         cheese_map = child.recv()
         player_position = child.recv()
@@ -159,9 +149,21 @@ def maze_episodes(maze_state, width, model, experience, win_history, data_size, 
             action = np.argmax(experience.predict(prev_state))
 
 
-
         # Apply action, get reward and new envstate
         child.send(actions_dict[action])
+
+        reward = child.recv()
+        print("reward : ", reward)
+
+        game_state = child.recv()
+
+        if game_state == ["win"]:
+            win_history.append(1)
+            game_over = True
+        elif game_state == ["lose"]:
+            win_history.append(0)
+            game_over = True
+
 
         register_episode(experience, prev_state, action, reward, state, False)
         n_episodes += 1
@@ -176,6 +178,9 @@ def maze_episodes(maze_state, width, model, experience, win_history, data_size, 
             verbose=0,
         )
         loss = model.evaluate(inputs, targets, verbose=0)
+
+
+    print("FINISHED")
 
     return n_episodes, loss
 
@@ -209,12 +214,9 @@ def training_processing(**opt):
 
         p = multiprocessing.Process(target=pyrat_instance, args=(child_link,))
         p.start()
-        parent_link.send([42, None, 'hello'])
         width = parent_link.recv()
         maze_map = parent_link.recv()
         maze_state = maze_processing(maze_map)
-        print(width)
-        print(maze_map)
         n_episodes, loss = maze_episodes(maze_state, width, model, experience, win_history, data_size, parent_link)
 
         if len(win_history) > hsize:
