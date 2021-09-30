@@ -31,6 +31,7 @@ import os
 import signal
 
 from os import environ
+
 environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
 import pygame
@@ -39,7 +40,6 @@ import datetime
 import gdown
 import ipynb_py_convert
 import json
-
 
 if args.import_keras:
     import keras
@@ -75,14 +75,14 @@ def play_sound(effect):
 # Function to handle a player, this is intended to be launched by a separate process
 def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, turn_time, parent, rnn):
     # If user provides a Google Colab shared link, we use it
-    if filename[:4] == "http" and "colab" in filename :
+    if filename[:4] == "http" and "colab" in filename:
         file_id = filename.split("/")[-1].split("?")[0]
         url = "https://drive.google.com/uc?id=" + file_id
         base_dir = os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "AIs" + os.path.sep
         ipynb_file_name = base_dir + file_id + ".ipynb"
         gdown.download(url, ipynb_file_name)
-        with open(ipynb_file_name, "r") as ipynb_file :
-            #notebook_name = ipynb_file.read().split(".ipynb")[0].split("name\":\"")[1]
+        with open(ipynb_file_name, "r") as ipynb_file:
+            # notebook_name = ipynb_file.read().split(".ipynb")[0].split("name\":\"")[1]
             notebook_json = json.load(ipynb_file)
             notebook_name = notebook_json["metadata"]["colab"]["name"]
             if notebook_name.endswith(".ipynb"):
@@ -92,7 +92,7 @@ def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, 
         os.remove(ipynb_file_name)
         filename = py_file_name
     # If user provides a local notebook file
-    if filename[-6:] == ".ipynb" :
+    if filename[-6:] == ".ipynb":
         base_dir = os.path.dirname(os.path.realpath(__file__)) + os.path.sep + "AIs" + os.path.sep
         file_id = filename.split(os.path.sep)[-1].split(".ipynb")[0]
         py_file_name = base_dir + file_id + ".py"
@@ -100,7 +100,7 @@ def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, 
         filename = py_file_name
     # We try to launch a regular AI
     try:
-        player = importlib.util.spec_from_file_location("player",filename)
+        player = importlib.util.spec_from_file_location("player", filename)
         module = importlib.util.module_from_spec(player)
         player.loader.exec_module(module)
         existence = True
@@ -110,7 +110,8 @@ def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, 
             var = traceback.format_exc()
             print("Error: " + var, file=sys.stderr)
             print("Error while loading player controlling " + pet + ", dummy player loaded instead", file=sys.stderr)
-        player = importlib.util.spec_from_file_location("player","resources" + os.path.sep + "imports" + os.path.sep + "dummy_player.py")
+        player = importlib.util.spec_from_file_location("player",
+                                                        "resources" + os.path.sep + "imports" + os.path.sep + "dummy_player.py")
         module = importlib.util.module_from_spec(player)
         player.loader.exec_module(module)
         existence = False
@@ -130,7 +131,7 @@ def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, 
         prep_time = after - before
     except Exception as e:
         traceback.print_exc()
-        print(e, file=sys.stderr,)
+        print(e, file=sys.stderr, )
     # We run each turn through this loop
     try:
         turn_delay = 0
@@ -139,7 +140,7 @@ def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, 
             # We get the new info
             try:
                 player1_location, player2_location, score1, score2, pieces_of_cheese = q_in.get()
-                while not(q_in.empty()):
+                while not (q_in.empty()):
                     player1_location, player2_location, score1, score2, pieces_of_cheese = q_in.get()
             except:
                 break
@@ -163,7 +164,8 @@ def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, 
                     parent.send(player1_location)
                     decision = parent.recv()
                 else:
-                    decision = turn(maze, width, height, player1_location, player2_location, score1, score2, pieces_of_cheese, turn_time)
+                    decision = turn(maze, width, height, player1_location, player2_location, score1, score2,
+                                    pieces_of_cheese, turn_time)
                 after = time.time()
                 turn_delay = turn_delay + (after - before)
                 turn_delay_count = turn_delay_count + 1
@@ -181,13 +183,14 @@ def player(pet, filename, q_in, q_out, q_quit, width, height, preparation_time, 
     player1_location, player2_location, score1, score2, pieces_of_cheese = q_in.get()
     if args.postprocessing:
         try:
-            module.postprocessing(maze, width, height, player1_location, player2_location, score1, score2, pieces_of_cheese, turn_time)
+            module.postprocessing(maze, width, height, player1_location, player2_location, score1, score2,
+                                  pieces_of_cheese, turn_time)
         except Exception as e:
             traceback.print_exc()
-            print(e, file=sys.stderr,)
-    try :
+            print(e, file=sys.stderr, )
+    try:
         q_out.put((prep_time, turn_delay / turn_delay_count))
-    except :
+    except:
         q_out.put((0, 0))
 
 
@@ -304,7 +307,6 @@ def run_game(screen, infoObject):
         savefile.write("# Python initial location\n")
         savefile.write(str(player2_location) + "\n")
 
-
     if args.rnn:
         parent.send(height)
         parent.send(maze)
@@ -322,13 +324,15 @@ def run_game(screen, infoObject):
     debug("Instantiating players", 1)
     if not (is_human_rat):
         p1 = mp.Process(target=player, args=(
-        "rat", args.rat, q1_in, q1_out, q1_quit, width, height, args.preparation_time, args.turn_time, parent, args.rnn,))
+            "rat", args.rat, q1_in, q1_out, q1_quit, width, height, args.preparation_time, args.turn_time, parent,
+            args.rnn,))
         p1.start()
     else:
         q1_out.put("human")
     if not (is_human_python):
         p2 = mp.Process(target=player, args=(
-        "python", args.python, q2_in, q2_out, q2_quit, width, height, args.preparation_time, args.turn_time, parent, False,))
+            "python", args.python, q2_in, q2_out, q2_quit, width, height, args.preparation_time, args.turn_time, parent,
+            False,))
         p2.start()
     else:
         q2_out.put("human")
@@ -338,7 +342,7 @@ def run_game(screen, infoObject):
     score1 = 0
     score2 = 0
 
-    #RNN
+    # RNN
     true_score1 = 0
     true_move1 = 0
     true_miss1 = 0
@@ -358,6 +362,8 @@ def run_game(screen, infoObject):
     win1 = 0
     win2 = 0
 
+    visited1 = []
+    final_score1 = 0
     # Retrieve names
     debug("Reading names of players", 1)
     p1name = str(q1_out.get())
@@ -406,9 +412,9 @@ def run_game(screen, infoObject):
     if not (args.nodrawing):
         q_render_quit = Queue()
         draw = Thread(target=run, args=(
-        maze, width, height, q_render, q_render_in, q_render_quit, p1name, p2name, q1_out, q2_out, is_human_rat,
-        is_human_python, q_info, pieces_of_cheese, player1_location, player2_location, args.rat != "",
-        args.python != "", screen, infoObject))
+            maze, width, height, q_render, q_render_in, q_render_quit, p1name, p2name, q1_out, q2_out, is_human_rat,
+            is_human_python, q_info, pieces_of_cheese, player1_location, player2_location, args.rat != "",
+            args.python != "", screen, infoObject))
         draw.start()
 
     # Send initial information to players
@@ -425,14 +431,18 @@ def run_game(screen, infoObject):
 
     debug("Starting game", 1)
 
+    maze_size = width * height
 
     while 1:
-        parent.send(true_score1 - miss1 + moves1)
-
         # Check if too many turns have occured, this is mainly to avoid unending games
         if turns == args.max_turns:
             send_info("max number of turns reached!", q_info)
             break
+
+        if (- final_score1) > maze_size * 2:
+            send_info("you suck", q_info)
+            break
+
         turns = turns + 1
 
         # First tell players if game is finished
@@ -464,8 +474,8 @@ def run_game(screen, infoObject):
 
         # Send drawing informations to graphical interface
         q_render.put((
-                     pieces_of_cheese.copy(), player1_location, player2_location, score1, score2, moves1, moves2, miss1,
-                     miss2, stucks1, stucks2))
+            pieces_of_cheese.copy(), player1_location, player2_location, score1, score2, moves1, moves2, miss1,
+            miss2, stucks1, stucks2))
 
         # Check if one of the players won
         if args.rat != "" and args.python != "":
@@ -572,7 +582,15 @@ def run_game(screen, infoObject):
         true_miss1 = miss1 - true_miss1
         if oldStuck1 <= 0:
             if args.rnn:
-                parent.send(true_score1 - 0.75 *true_miss1 - 0.05 * true_move1)
+                visited_penality = 0
+
+                if player1_location not in visited1:
+                    visited1.append(player1_location)
+                else:
+                    visited_penality = 0.25
+                true_score1 -= 0.75 * true_miss1 + 0.05 * true_move1 + visited_penality
+                final_score1 += true_score1
+                parent.send(true_score1)
 
         true_score1 = 0
         true_move1 = 0
@@ -580,11 +598,6 @@ def run_game(screen, infoObject):
         true_stucks1 = 0
 
     if args.rnn:
-        #if stuck1 > 0:
-        #    parent.send(stuck1)
-        #true_move1 = moves1 - true_move1
-        #true_stucks1 = stuck1
-        #parent.send(true_score1 - true_miss1 - true_move1 - true_stucks1)
         if tempwin != win1:
             parent.send(["win"])
         else:

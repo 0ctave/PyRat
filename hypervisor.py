@@ -1,15 +1,19 @@
 from __future__ import print_function
 import numpy as np
 import os, sys, time, datetime, json, random
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation
+from keras.layers.advanced_activations import PReLU
+from keras.layers.advanced_activations import LeakyReLU
+from keras.activations import relu
 from tensorflow.keras.optimizers import SGD, Adam, RMSprop
+
 from keras.layers.advanced_activations import PReLU
 import random
 import multiprocessing
 import pyrat
-
-epsilon = 0.1
 
 MOVE_DOWN = 0
 MOVE_LEFT = 1
@@ -43,40 +47,55 @@ class Episode(object):
     def predict(self, envstate):
         return self.model.predict(envstate)[0]
 
+
+
     def get_data(self, data_size=10):
         env_size = self.memory[0][0].shape[1]  # envstate 1d size (1st element of episode)
         mem_size = len(self.memory)
         data_size = min(mem_size, data_size)
         inputs = np.zeros((data_size, env_size))
         targets = np.zeros((data_size, self.num_actions))
-        for i, j in enumerate(np.random.choice(range(mem_size), data_size, replace=False)):
-            envstate, action, reward, envstate_next, game_over = self.memory[j]
-            inputs[i] = envstate
+
+        def mt_get_data(model, memory, i, j, discount):
+            envstate, action, reward, envstate_next, game_over = memory[j]
+            input = envstate
             # There should be no target values for actions not taken.
-            targets[i] = self.predict(envstate)
-            # q_sa = derived policy = max quality env/action = max_a' Q(s', a')
-            q_sa = np.max(self.predict(envstate_next))
+
+            target = model.predict(envstate)[0]
+
+            q_sa = np.max(model.predict(envstate_next)[0])
             if game_over:
-                targets[i, action] = reward
+                target[action] = reward
             else:
-                # reward + gamma * max_a' Q(s', a')
-                targets[i, action] = reward + self.discount * q_sa
+                target[action] = reward + discount * q_sa
+            return input, target
+
+        def mt_process_data(result):
+            input, target = result
+            inputs.append(input)
+            targets.append(target)
+
+        pool = multiprocessing.Pool()
+
+        for i, j in enumerate(np.random.choice(range(mem_size), min(data_size, 100), replace=False)):
+            pool.apply_async(mt_get_data, args=(self.model, self.memory, i, j, self.discount), callback=mt_process_data)
+
         return inputs, targets
 
 
 def build_model():
     model = Sequential()
-    model.add(Dense(36, input_shape=(36,)))
-    model.add(PReLU())
-    model.add(Dense(36))
-    model.add(PReLU())
+    model.add(Dense(400, input_shape=(400,)))
+    model.add(LeakyReLU(alpha=0.24))
+    model.add(Dense(400))
+    model.add(LeakyReLU(alpha=0.24))
     model.add(Dense(4))
     model.compile(optimizer='adam', loss='mse')
     return model
 
 
 def pyrat_instance(child_link):
-    args = ["--rat", "AIs/RNN.py", "-x", "4", "-y", "4", "-p", "2", "--start_random", "-mt", "50", "--rnn",
+    args = ["--rat", "AIs/RNN.py", "-x", "10", "-y", "10", "-p", "6", "--start_random", "-mt", "400", "--rnn",
             "--synchronous",
             "--auto_exit",
             "--preparation_time", "0",
@@ -95,9 +114,9 @@ def maze_processing(maze_map):
         for i in range(0, 4):
             pos = (x + (i - 1 if i % 2 == 0 else 0), y + (i - 2 if i % 2 == 1 else 0))
             if pos in maze_map[location]:
-                maze_state[count * 4 + i] = maze_map[location][pos]
+                maze_state[count * 4 + i] = maze_map[location][pos] / 100
             else:
-                maze_state[count * 4 + i] = 100
+                maze_state[count * 4 + i] = 1
 
         count += 1
     return maze_state
@@ -106,16 +125,16 @@ def maze_processing(maze_map):
 def state_observer(maze_state, width, player_location, pieces_of_cheese):
     tmp = np.copy(maze_state)
     for i in range(0, 4):
-        tmp[width * player_location[0] + player_location[1] + i] -= 50
+        tmp[width * player_location[0] + player_location[1] + i] -= 0.5
 
     cheese_map = np.zeros(len(maze_state))
     for location in pieces_of_cheese:
         x = location[0]
         y = location[1]
         for i in range(0, 4):
-            cheese_map[(width * x + y) * 4 + i] = 1
+            cheese_map[(width * x + y) * 4 + i] = -1
 
-    return np.add(tmp, -100 * cheese_map).reshape((1, -1))
+    return np.add(tmp, cheese_map).reshape((1, -1))
 
 
 def register_episode(experience, prev_maze_state, action, reward, maze_state, game_over):
@@ -123,17 +142,26 @@ def register_episode(experience, prev_maze_state, action, reward, maze_state, ga
     experience.remember(episode)
 
 
-def maze_episodes(maze_state, width, model, experience, win_history, data_size, child):
+def maze_episodes(maze_state, width, model, episode, win_history, data_size, child, win_count):
     loss = 0.0
+
+
+    def epsilon():
+        top = 0.80
+        bottom = 0.08
+        if win_count<10:
+            e = bottom + (top - bottom) / (1 + 0.1 * win_count**0.5)
+        else:
+            e = bottom
+        return e
 
     # get initial envstate (1d flattened canvas)
 
     n_episodes = 0
-    action = MOVE_DOWN
     state = state_observer(maze_state, width, [0, 0], [])
 
     game_over = False
-    print(child.recv())
+    child.recv()
     while not game_over:
 
         prev_state = state
@@ -143,18 +171,16 @@ def maze_episodes(maze_state, width, model, experience, win_history, data_size, 
         state = state_observer(maze_state, width, player_position, cheese_map)
         # Get next action
 
-        if np.random.rand() < epsilon:
+        if np.random.rand() < epsilon():
             action = random.choice([MOVE_DOWN, MOVE_LEFT, MOVE_RIGHT, MOVE_UP])
         else:
-            action = np.argmax(experience.predict(prev_state))
-
+            action = np.argmax(episode.predict(prev_state))
 
         # Apply action, get reward and new envstate
         child.send(actions_dict[action])
 
         reward = child.recv()
-        print("reward : ", reward)
-
+        print(reward)
         game_state = child.recv()
 
         if game_state == ["win"]:
@@ -164,12 +190,13 @@ def maze_episodes(maze_state, width, model, experience, win_history, data_size, 
             win_history.append(0)
             game_over = True
 
-
-        register_episode(experience, prev_state, action, reward, state, False)
+        register_episode(episode, prev_state, action, reward, state, False)
         n_episodes += 1
 
+        # start_time = datetime.datetime.now()
+
         # Train neural network model
-        inputs, targets = experience.get_data(data_size=data_size)
+        inputs, targets = episode.get_data(data_size=data_size)
         h = model.fit(
             inputs,
             targets,
@@ -177,17 +204,17 @@ def maze_episodes(maze_state, width, model, experience, win_history, data_size, 
             batch_size=16,
             verbose=0,
         )
+
+        # print(datetime.datetime.now() - start_time)
+
         loss = model.evaluate(inputs, targets, verbose=0)
-
-
-    print("FINISHED")
 
     return n_episodes, loss
 
 
 def training_processing(**opt):
     global epsilon
-    n_epoch = opt.get('n_epoch', 15000)
+    n_epoch = opt.get('n_epoch', 300)
     max_memory = opt.get('max_memory', 1000)
     data_size = opt.get('data_size', 50)
     weights_file = opt.get('weights_file', "")
@@ -200,7 +227,7 @@ def training_processing(**opt):
         print("loading weights from file: %s" % (weights_file,))
         model.load_weights(weights_file)
 
-    experience = Episode(model, max_memory=max_memory)
+    episode = Episode(model, max_memory=max_memory)
 
     win_history = []  # history of win/lose game
     hsize = 1024 // 2  # history window size
@@ -217,7 +244,7 @@ def training_processing(**opt):
         width = parent_link.recv()
         maze_map = parent_link.recv()
         maze_state = maze_processing(maze_map)
-        n_episodes, loss = maze_episodes(maze_state, width, model, experience, win_history, data_size, parent_link)
+        n_episodes, loss = maze_episodes(maze_state, width, model, episode, win_history, data_size, parent_link, len(win_history))
 
         if len(win_history) > hsize:
             win_rate = sum(win_history[-hsize:]) / hsize
@@ -228,7 +255,6 @@ def training_processing(**opt):
         print(template.format(epoch, n_epoch - 1, loss, n_episodes, sum(win_history), win_rate, t))
         # we simply check if training has exhausted all free cells and if in all
         # cases the agent won
-        if win_rate > 0.9: epsilon = 0.05
         if sum(win_history[-hsize:]) == hsize:  # and completion_check(model, qmaze):
             print("Reached 100%% win rate at epoch: %d" % (epoch,))
             break
@@ -261,4 +287,4 @@ def format_time(seconds):
 
 
 if __name__ == '__main__':
-    training_processing(epochs=1, max_memory=8 * 64, data_size=64)
+    training_processing(n_epochs=1, max_memory=8 * 400, data_size=64)

@@ -72,9 +72,9 @@ The `preprocessing` function is called at the very start of a game. It is attrib
 def preprocessing(maze_map, maze_width, maze_height, player_location, opponent_location, pieces_of_cheese,
                   time_allowed):
     global moves
-    meta_graph = build_meta_graph(maze_map, [player_location] + pieces_of_cheese)
+    meta_graph, route_meta_graph = build_meta_graph(maze_map, [player_location] + pieces_of_cheese)
     print(meta_graph)
-    print(len(meta_graph))
+    print(route_meta_graph)
     #a = pieces_of_cheese.pop(0)
     #moves = moves_from_locations(find_route(djikstra(player_location, maze_map), player_location, a))
     # We are getting all the moves here to store them in the global variable moves
@@ -101,10 +101,12 @@ for the player to make a decision (*i.e.*, to return a move among those defined 
 
 def build_meta_graph (maze_map, locations) :
     meta_graph = {}
+    route_meta_graph = {}
     for location in locations:
         priority_queue = []
         meta_graph[location] = {}
         visited = [location]
+        route = [(location, None)]
 
         for neighbour in maze_map[location]:  # We are searching for his kids
             heapq.heappush(priority_queue, (maze_map[location][neighbour], (neighbour, location)))
@@ -115,7 +117,7 @@ def build_meta_graph (maze_map, locations) :
 
         while priority_queue:
             weight, (parent, ancestor) = heapq.heappop(priority_queue)
-
+            route.append((parent, ancestor))
             if parent in locations:
                 meta_graph[location][parent] = weight
 
@@ -123,7 +125,9 @@ def build_meta_graph (maze_map, locations) :
                 if child not in visited:
                     heapq.heappush(priority_queue, (maze_map[parent][child] + weight, (child, parent)))
                     visited.append(child)
-    return meta_graph
+
+        route_meta_graph[location] = route
+    return meta_graph, route_meta_graph
 
 def move_from_locations(source_location, target_location):
     difference = (target_location[0] - source_location[0], target_location[1] - source_location[1])
