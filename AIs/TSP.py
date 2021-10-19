@@ -72,9 +72,11 @@ The `preprocessing` function is called at the very start of a game. It is attrib
 def preprocessing(maze_map, maze_width, maze_height, player_location, opponent_location, pieces_of_cheese,
                   time_allowed):
     global moves
-    meta_graph, route_meta_graph = build_meta_graph(maze_map, [player_location] + pieces_of_cheese)
-    print(meta_graph)
-    print(route_meta_graph)
+
+    maze_map_mirror_processing(maze_map, maze_width, maze_height)
+    #meta_graph, route_meta_graph = build_meta_graph(maze_map, [player_location] + pieces_of_cheese)
+    #print(meta_graph)
+    #print(route_meta_graph)
     #a = pieces_of_cheese.pop(0)
     #moves = moves_from_locations(find_route(djikstra(player_location, maze_map), player_location, a))
     # We are getting all the moves here to store them in the global variable moves
@@ -100,6 +102,53 @@ for the player to make a decision (*i.e.*, to return a move among those defined 
 """
 
 def build_meta_graph (maze_map, locations) :
+    print(maze_map)
+    meta_graph = {}
+    route_meta_graph = {}
+    for location in locations:
+        priority_queue = []
+        meta_graph[location] = {}
+        visited = [location]
+        route = [(location, None)]
+
+        for neighbour in maze_map[location]:  # We are searching for his kids
+            heapq.heappush(priority_queue, (maze_map[location][neighbour], (neighbour, location)))
+            visited.append(neighbour)
+
+            if neighbour in locations:
+                meta_graph[location][neighbour] = maze_map[location][neighbour]
+
+        while priority_queue:
+            weight, (parent, ancestor) = heapq.heappop(priority_queue)
+            route.append((parent, ancestor))
+            if parent in locations:
+                meta_graph[location][parent] = weight
+
+            for child in maze_map[parent]:
+                if child not in visited:
+                    heapq.heappush(priority_queue, (maze_map[parent][child] + weight, (child, parent)))
+                    visited.append(child)
+
+        route_meta_graph[location] = route
+    return meta_graph, route_meta_graph
+
+def maze_map_mirror_processing(maze_map, maze_width, maze_heigh):
+    mirror_maze_map = {}
+    for location in maze_map:
+        mirror_maze_map[location] = {}
+        for neighbour in maze_map[location]:
+            #if maze_map
+            mirror_maze_map[location][neighbour] = maze_map[location][neighbour]
+
+    print(maze_map)
+    print(mirror_maze_map)
+    pass
+
+
+def build_mirror_meta_graph (maze_map, maze_width, maze_heigh, locations):
+
+    maze_map = maze_map_mirror_processing(maze_map, maze_width, maze_heigh)
+
     meta_graph = {}
     route_meta_graph = {}
     for location in locations:
