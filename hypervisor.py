@@ -2,7 +2,7 @@ from __future__ import print_function
 import numpy as np
 import os, sys, time, datetime, json, random
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+#os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation
 from keras.layers.advanced_activations import PReLU
@@ -56,29 +56,30 @@ class Episode(object):
         inputs = np.zeros((data_size, env_size))
         targets = np.zeros((data_size, self.num_actions))
 
-        def mt_get_data(model, memory, i, j, discount):
-            envstate, action, reward, envstate_next, game_over = memory[j]
+        def mt_get_data(i, j):
+            envstate, action, reward, envstate_next, game_over = self.memory[j]
             input = envstate
             # There should be no target values for actions not taken.
 
-            target = model.predict(envstate)[0]
+            target = self.predict(envstate)
 
-            q_sa = np.max(model.predict(envstate_next)[0])
+            q_sa = np.max(self.predict(envstate_next))
             if game_over:
                 target[action] = reward
             else:
-                target[action] = reward + discount * q_sa
-            return input, target
+                target[action] = reward + self.discount * q_sa
+            return input, target, i
 
         def mt_process_data(result):
-            input, target = result
-            inputs.append(input)
-            targets.append(target)
+            input, target, i = result
+            print(input)
+            inputs[i] = input
+            targets[i] = target
 
         pool = multiprocessing.Pool()
 
         for i, j in enumerate(np.random.choice(range(mem_size), min(data_size, 100), replace=False)):
-            pool.apply_async(mt_get_data, args=(self.model, self.memory, i, j, self.discount), callback=mt_process_data)
+            pool.apply_async(mt_get_data, args=(i, j), callback=mt_process_data)
 
         return inputs, targets
 
@@ -95,7 +96,9 @@ def build_model():
 
 
 def pyrat_instance(child_link):
-    args = ["--rat", "AIs/RNN.py", "-x", "10", "-y", "10", "-p", "6", "--start_random", "-mt", "400", "--rnn",
+    args = ["--rat", "AIs/RNN.py", "-x", "10", "-y", "10", "-p", "4",  "-mt", "400", "--rnn",
+            #"--start_random",
+            "--random_seed", "1",
             "--synchronous",
             "--auto_exit",
             "--preparation_time", "0",

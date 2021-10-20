@@ -48,9 +48,10 @@ Please put your functions, imports, constants, etc. between this text and the Py
 # Import of random module
 #
 import random
+import numpy as np
 moves=None
 import heapq
-#python pyrat.py --rat "https://colab.research.google.com/drive/1cc8QXG2Q-WqKlE-3Y91H5U09KERPlozI?usp=sharing" -p 1 -x 15 -y 15 -d 0.5 --random_seed 1
+#python pyrat.py --rat "https://colab.research.google.com/drive/1hMpNtO_EjwjsuyJDNSg2x4y467cMpeTW?usp=sharing" -p 5 -x 15 -y 15 -d 0.5 --random_seed 1
 
 
 # %%
@@ -85,9 +86,8 @@ The `preprocessing` function is called at the very start of a game. It is attrib
 # %%
 def preprocessing (maze_map, maze_width, maze_height, player_location, opponent_location, pieces_of_cheese, time_allowed) :
     global moves
-    a=pieces_of_cheese.pop(0)
-    moves=moves_from_locations(find_route(djikstra(player_location,maze_map),player_location,a))
-    #We are getting all the moves here to store them in the global variable moves
+    graph,route_meta=build_meta_graph(maze_map, pieces_of_cheese + [player_location])
+    moves=moves_from_locations(tsp(graph,player_location,route_meta,pieces_of_cheese))
     pass
 
 # %%
@@ -109,6 +109,37 @@ for the player to make a decision (*i.e.*, to return a move among those defined 
 *Output:*
 *   A chosen move among `MOVE_UP`, `MOVE_DOWN`, `MOVE_LEFT` or `MOVE_RIGHT`.
 """
+
+# %%
+def build_meta_graph (maze_map, locations) :
+    meta_graph = {} #We initialize the dictionnary where we are going to store the meta_graph vertices
+    route_meta_graph = {}#We initialize the dictionnary where we are going to store the route in the graph between the vertices of the meta_graph
+    for location in locations: #We parcour the list of cheeses to define them as vertices in our meta graph
+        priority_queue = []#We are going to use the priority queue because we are going to use a djikstra to find the best way
+        meta_graph[location] = {}#We initialize the road from the cheese location to other cheeses
+        visited = [location]#We note the cheese as visited
+        route = [(location, None)]#So this is going to be the start of our route
+
+        for neighbour in maze_map[location]:  # We are searching for his kids
+            heapq.heappush(priority_queue, (maze_map[location][neighbour], (neighbour, location)))#We push the neighbour in the priority queue
+            visited.append(neighbour)#We note the case as visited
+
+            if neighbour in locations:#If the neighbour is a cheese then 
+                meta_graph[location][neighbour] = maze_map[location][neighbour]#we add it to the meta graph
+
+        while priority_queue:#As long as we have vertices to go
+            weight, (parent, ancestor) = heapq.heappop(priority_queue)#We get them with their weight and we remove them from the priority queue
+            route.append((parent, ancestor))#We add them to the road
+            if parent in locations:#If it's a cheese 
+                meta_graph[location][parent] = weight#We add it to the meta graph
+
+            for child in maze_map[parent]:#We parcour the neighbour of the vertex
+                if child not in visited:#If we didnt went to the neighbour
+                    heapq.heappush(priority_queue, (maze_map[parent][child] + weight, (child, parent)))#We add him to the priority queue
+                    visited.append(child)#We marked him as visited
+
+        route_meta_graph[location] = route#We add to the dictionnary the road from a cheese to another
+    return meta_graph, route_meta_graph
 
 # %%
 def move_from_locations(source_location, target_location):
@@ -154,15 +185,15 @@ def djikstra(start_vertex, graph):
     # Djikstra traversal
 
     route = [(start_vertex, None)]  # We are starting the route from the start (logic) with a parent classified as None
-    priority_queue = []#We initialize the priority queue
-    visited_nodes=[start_vertex]#We initialize the list of visited vertices
+    priority_queue = []
+    visited_nodes=[start_vertex]
     for neighbour in graph[start_vertex].keys():  # We are searching for his kids
-        heapq.heappush(priority_queue,(graph[start_vertex][neighbour],(neighbour,start_vertex)))#We push them in the priority queue
-        visited_nodes.append(neighbour)#We add them to the visited nodes
-    while priority_queue:#As long as we can go to some vertices
-          weight,a=heapq.heappop(priority_queue)#We get the closest neighbour  
+        heapq.heappush(priority_queue,(graph[start_vertex][neighbour],(neighbour,start_vertex)))
+        visited_nodes.append(neighbour)
+    while priority_queue:
+          weight,a=heapq.heappop(priority_queue)
           current_node,parrent_node=a
-          route = push_to_structure(route, (current_node, parrent_node))#We add him to the route
+          route = push_to_structure(route, (current_node, parrent_node))
           parrent_node=current_node
           for child in list(graph[current_node].keys()):  # We are searching all his kids
 
@@ -186,9 +217,7 @@ def find_route(routing_table, source_location, target_location):
         target_location = a  # Once we have found the arrival we place the arrival on the parent of the arrival
         route.append(a)  # And we add the parent to the road
 
-    print(route)
-
-    return route
+    return route[::-1]
 
 
 def moves_from_locations(locations):
@@ -201,3 +230,32 @@ def moves_from_locations(locations):
         i -= 1
 
     return moves
+
+def tsp(graph, initial_vertex,route_meta,pieces_of_cheese) :
+    # Recursive implementation of a TSP
+    print(graph)
+    weight=100000
+    best_path=[]
+    def _tsp(visited_vertex, current_lenght) :
+          nonlocal weight,best_path  
+          if len(visited_vertex)==len(pieces_of_cheese)+1: # Condition to exit recursion
+            if current_lenght<weight:
+              weight=current_lenght
+              best_path=visited_vertex
+            return
+          for neighbour in graph[visited_vertex[len(visited_vertex)-1]]: # Create the sub tree of solutions
+            if neighbour not in visited_vertex :
+              w=graph[visited_vertex[len(visited_vertex)-1]][neighbour]
+              _tsp(visited_vertex+[neighbour],current_lenght+w) # Call _tsp on the leafs of the tree
+            else :
+              continue   
+    _tsp([initial_vertex],0)
+
+    print(best_path)
+    path = [(0, 0)]
+    for i in range(0, len(best_path) - 1):
+        path = path[:-1] + find_route(route_meta[best_path[i]], best_path[i], best_path[i+1])
+    
+    return path[::-1]
+
+        

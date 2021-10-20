@@ -588,7 +588,7 @@ def run_game(screen, infoObject):
                     visited1.append(player1_location)
                 else:
                     visited_penality = 0.25
-                true_score1 -= 0.75 * true_miss1 + 0.05 * true_move1 + visited_penality
+                true_score1 -= 10 * true_miss1 + 0.05 * true_move1 + visited_penality
                 final_score1 += true_score1
                 parent.send(true_score1)
 
