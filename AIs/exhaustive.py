@@ -206,6 +206,10 @@ def djikstra(start_vertex, graph):
 
 # Because a parent can have multiple child but a child only have one parent we are starting from the arrival to go to the start
 def find_route(routing_table, source_location, target_location):
+    print("routing", routing_table)
+    print("source", source_location)
+    print("target", target_location)
+
     tmp = None
     a = None
     route = [target_location]  # We start our route at the arrival
@@ -221,6 +225,7 @@ def find_route(routing_table, source_location, target_location):
 
 
 def moves_from_locations(locations):
+    print("locations", locations)
     moves = []  # We initiate the variable
     i = len(locations) - 1  # We are parcouring the list from the end
     while i > 0:  # Until we doesnt reach the end of locations we continue

@@ -12,19 +12,21 @@ MOVE_UP = 'U'
 
 isRat = True
 moves = []
+width = 0
+height = 0
 
-def anneal(corpus, cold=1e-9, alpha=0.9995, stopper=100000):
+
+def anneal(corpus, cold=1e-20, alpha=0.9996, stopper=100000):
     i = 0
 
-    temperature = math.sqrt(len(corpus))
-    #temperature = 10000
+    temperature = np.sqrt(len(corpus))
     best_solution = current_solution = nearest_neighbour(corpus)
     best_weight = current_weight = solution_weight(corpus, best_solution)
-
+    print(best_solution)
     while temperature >= cold and i < stopper:
         candidate = list(current_solution)
         l = random.randint(2, len(corpus) - 1)
-        i = random.randint(0, len(corpus) - l)
+        i = random.randint(1, len(corpus) - l)
 
         candidate[i: (i + l)] = reversed(candidate[i: (i + l)])
 
@@ -50,6 +52,12 @@ def solution_weight(corpus, solution):
     return sum(corpus[solution[i]][solution[i + 1]] for i in range(0, len(solution) - 1))
 
 
+# def cheese_clusters(input_corpus):
+#     corpus = input_corpus.copy()
+#     for cheese in corpus.keys()[1:]:
+#         for element in corpus[cheese]:
+#             pass
+
 def nearest_neighbour(input_corpus):
     corpus = input_corpus.copy()
     current_node = list(corpus.keys())[0]
@@ -70,15 +78,23 @@ def nearest_neighbour(input_corpus):
 
 def preprocessing(maze_map, maze_width, maze_height, player_location, opponent_location, pieces_of_cheese,
                   time_allowed):
-    if player_location != (0, 0):
-        isRat = False
+    global moves
+    global width
+    global height
 
-    meta_graph, route_meta_graph = build_meta_graph(maze_map, [player_location] + pieces_of_cheese)
+    width = maze_width
+    height = maze_height
+
+    meta_graph, route_meta_graph, medium_distance = build_meta_graph(maze_map, [player_location] + pieces_of_cheese)
+
+    print(medium_distance)
 
     solution = time_keeper(anneal, meta_graph)
+    print(solution)
     print(solution_weight(meta_graph, solution))
     print(solution_weight(meta_graph, time_keeper(nearest_neighbour, meta_graph)))
-    moves = moves_from_locations(find_route(route_meta_graph, player_location, solution))
+    moves = moves_from_locations(compute_path(route_meta_graph, solution))
+    print(moves)
     print(time_keeper(nearest_neighbour, meta_graph))
 
     # maze_map_mirror_processing(maze_map, maze_width, maze_height)
@@ -90,6 +106,7 @@ def preprocessing(maze_map, maze_width, maze_height, player_location, opponent_l
 def build_meta_graph(maze_map, locations):
     meta_graph = {}
     route_meta_graph = {}
+    medium_distance = 0
     for location in locations:
         priority_queue = []
         meta_graph[location] = {}
@@ -102,20 +119,23 @@ def build_meta_graph(maze_map, locations):
 
             if neighbour in locations:
                 meta_graph[location][neighbour] = maze_map[location][neighbour]
+                medium_distance += maze_map[location][neighbour]
 
         while priority_queue:
             weight, (parent, ancestor) = heapq.heappop(priority_queue)
             route.append((parent, ancestor))
             if parent in locations:
                 meta_graph[location][parent] = weight
-
+                medium_distance += weight
             for child in maze_map[parent]:
                 if child not in visited:
                     heapq.heappush(priority_queue, (maze_map[parent][child] + weight, (child, parent)))
                     visited.append(child)
 
         route_meta_graph[location] = route
-    return meta_graph, route_meta_graph
+
+    medium_distance /= len(meta_graph) * (len(meta_graph) - 1)
+    return meta_graph, route_meta_graph, medium_distance
 
 
 def maze_map_mirror_processing(maze_map, maze_width, maze_heigh):
@@ -143,10 +163,9 @@ def pieces_of_cheese_mirror_processing(pieces_of_cheese, maze_width, maze_heigh)
 
 def turn(maze_map, maze_width, maze_height, player_location, opponent_location, player_score, opponent_score,
          pieces_of_cheese, time_allowed):
+    global moves
 
-    a = moves.pop(0)
-
-    return a
+    return moves.pop(0)
 
 
 def djikstra(start_vertex, graph):
@@ -190,8 +209,16 @@ def find_route(routing_table, source_location, target_location):
 
     return route
 
+def compute_path(route_meta, best_path):
+    best_path = best_path[::-1]
+    path = [(0, 0)]
+    for i in range(0, len(best_path) - 1):
+        path = path[:-1] + find_route(route_meta[best_path[i]], best_path[i], best_path[i + 1])[::-1]
+
+    return path
 
 def moves_from_locations(locations):
+    print("locations", locations)
     moves = []  # We initiate the variable
     i = len(locations) - 1  # We are parcouring the list from the end
     while i > 0:  # Until we doesnt reach the end of locations we continue
@@ -214,3 +241,4 @@ def move_from_locations(source_location, target_location):
         return MOVE_LEFT
     else:
         raise Exception("Impossible move")
+
